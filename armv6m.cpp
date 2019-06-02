@@ -118,6 +118,23 @@ uint32_t Armv6m::get_register(int r)
     return 0;
 }
 //-----------------------------------------------------------------
+// set_flag: Adjust flag fields
+//-----------------------------------------------------------------
+void Armv6m::set_flag(uint32_t flag, bool val)
+{
+    if (val)
+        m_apsr |= flag;
+    else
+        m_apsr &= ~flag;
+}
+//-----------------------------------------------------------------
+// get_flag: Get particular flag
+//-----------------------------------------------------------------
+bool Armv6m::get_flag(uint32_t flag)
+{
+    return (m_apsr & flag) != 0;
+}
+//-----------------------------------------------------------------
 // get_break: Get breakpoint status (and clear)
 //-----------------------------------------------------------------
 bool Armv6m::get_break(void)
@@ -503,13 +520,13 @@ uint32_t Armv6m::armv6m_add_with_carry(uint32_t rn, uint32_t rm, uint32_t carry_
 //-------------------------------------------------------------------
 uint32_t Armv6m::armv6m_shift_left(uint32_t val, uint32_t shift, uint32_t mask)
 {
-    unsigned long long res = val;
+    uint64_t res = val;
     res <<= shift;
 
     // Carry Out (res[32])
     if (mask & APSR_C)
     {
-        if (res & ((unsigned long long)1 << 32))
+        if (res & ((uint64_t)1 << 32))
             m_apsr |= APSR_C;
         else
             m_apsr &=~APSR_C;
@@ -534,22 +551,19 @@ uint32_t Armv6m::armv6m_shift_left(uint32_t val, uint32_t shift, uint32_t mask)
 //-------------------------------------------------------------------
 uint32_t Armv6m::armv6m_shift_right(uint32_t val, uint32_t shift, uint32_t mask)
 {
-    uint32_t res = val;
+    uint32_t res = (shift >= 32) ? 0 : val;
 
     // Carry Out (val[shift-1])
     if ((mask & APSR_C) && (shift > 0))
     {
         // Last lost bit shifted right
-        if (val & (1 << (shift-1)))
+        if ((val & (1 << (shift-1))) && (shift <= 32))
             m_apsr |= APSR_C;
         else
             m_apsr &=~APSR_C;
     }
 
-    if (shift > 32)
-        res = 0;
-    else
-        res >>= shift;
+    res >>= shift;
 
     // Zero
     if ((res & 0xFFFFFFFF) == 0)
@@ -604,13 +618,22 @@ uint32_t Armv6m::armv6m_arith_shift_right(uint32_t val, uint32_t shift, uint32_t
 uint32_t Armv6m::armv6m_rotate_right(uint32_t val, uint32_t shift, uint32_t mask)
 {
     uint32_t res;
-    
-    shift &= 0x1F;
 
-    res = val >> shift;
-    res |= (val << (32 - shift));
-    
-    // TODO: Carry OUT????
+    if (shift == 0)
+        res = val;
+    else
+    {
+        shift &= 0x1F;
+
+        res = val >> shift;
+        res |= (val << (32 - shift));
+    }
+
+    // Carry out
+    if (res & 0x80000000)
+        m_apsr |= APSR_C;
+    else
+        m_apsr &=~APSR_C;
 
     // Zero
     if ((res & 0xFFFFFFFF) == 0)
@@ -1553,8 +1576,6 @@ void Armv6m::armv6m_execute(uint16_t inst, uint16_t inst2)
                 if (m_imm == 0)
                     m_imm = 32;
 
-                assert(m_imm >= 0);
-
                 reg_rd = armv6m_arith_shift_right(reg_rm, m_imm, FLAGS_NZC);
                 write_rd = 1;
             }
@@ -1701,7 +1722,8 @@ void Armv6m::armv6m_execute(uint16_t inst, uint16_t inst2)
             // 0 0 0 0 1 imm5 Rm Rd
             case INST_LSRS_OPCODE:
             {
-                assert(m_imm > 0);
+                if (m_imm == 0)
+                    m_imm = 32;
 
                 reg_rd = armv6m_shift_right(reg_rm, m_imm, FLAGS_NZC);
                 write_rd = 1;
@@ -2109,15 +2131,26 @@ void Armv6m::armv6m_execute(uint16_t inst, uint16_t inst2)
             // 0 1 0 0 0 0 0 0 1 0 Rm Rdn
             case INST_LSLS_1_OPCODE:
             {
-                reg_rd = armv6m_shift_left(reg_rn, reg_rm, FLAGS_NZC);
-                write_rd = 1;
+                if (reg_rm == 0)
+                {
+                    reg_rd   = reg_rn;
+                    write_rd = 1;
+
+                    // Update N & Z
+                    armv6m_update_n_z_flags(reg_rd);
+                }
+                else
+                {
+                    reg_rd = armv6m_shift_left(reg_rn, reg_rm, FLAGS_NZC);
+                    write_rd = 1;
+                }
             }
             break;
             // LSRS - LSRS <Rdn>,<Rm>
             // 0 1 0 0 0 0 0 0 1 1 Rm Rdn
             case INST_LSRS_1_OPCODE:
             {
-                reg_rd = armv6m_shift_right(reg_rn, reg_rm, FLAGS_NZC);
+                reg_rd = armv6m_shift_right(reg_rn, reg_rm & 0xFF, FLAGS_NZC);
                 write_rd = 1;
             }
             break;
@@ -2187,7 +2220,7 @@ void Armv6m::armv6m_execute(uint16_t inst, uint16_t inst2)
             // 0 1 0 0 0 0 0 1 1 1 Rm Rdn
             case INST_RORS_OPCODE:
             {
-                reg_rd = armv6m_rotate_right(reg_rn, reg_rm, FLAGS_NZC);
+                reg_rd = armv6m_rotate_right(reg_rn, reg_rm & 0xFF, FLAGS_NZC);
                 write_rd = 1;
             }
             break;

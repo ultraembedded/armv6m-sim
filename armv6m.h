@@ -92,6 +92,8 @@ public:
 
     void                set_register(int r, uint32_t val);
     void                set_pc(uint32_t val);
+    void                set_flag(uint32_t flag, bool val);
+    bool                get_flag(uint32_t flag);
 
     // Breakpoints
     bool                get_break(void);
@@ -116,6 +118,8 @@ protected:
     void                armv6m_dump_inst(uint16_t inst);
     uint32_t            armv6m_exception(uint32_t pc, uint32_t exception);
     void                armv6m_exc_return(uint32_t pc);
+
+public:
     int                 armv6m_decode(uint16_t inst);
     void                armv6m_execute(uint16_t inst, uint16_t inst2);
 
