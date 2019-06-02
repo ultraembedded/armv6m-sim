@@ -24,8 +24,20 @@ To build the executable, type:
 make
 ````
 
-#### Usage
+#### Usage: Standalone Mode
 ```
 # 0xNNNN is the entry point for the ELF (vector table)
 armv6m-sim -f your_elf.elf -X 0xNNNN
+```
+
+#### Usage: GDB Mode
+```
+# Start simulator in GDB mode
+armv6m-sim -f your_elf.elf -X 0xNNNN -g & 
+
+# Start GDB and execute program (stopping main)
+arm-none-eabi-gdb your_elf.elf
+> target remote localhost:3333
+> break main
+> cont
 ```

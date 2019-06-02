@@ -7,6 +7,7 @@
 
 #include "armv6m.h"
 #include "elf_load.h"
+#include "gdb_server.h"
 
 //-----------------------------------------------------------------
 // mem_create: Create memory region
@@ -99,9 +100,11 @@ int main(int argc, char *argv[])
     bool explicit_start = false;
     uint32_t explicit_start_addr = 0;
     bool explicit_mem = true;
+    bool gdb = false;
+    int  gdb_port = 3333;
     int c;
 
-    while ((c = getopt (argc, argv, "t:v:f:c:r:d:b:s:e:X:")) != -1)
+    while ((c = getopt (argc, argv, "t:v:f:c:r:d:b:s:e:X:g")) != -1)
     {
         switch(c)
         {
@@ -135,6 +138,9 @@ int main(int argc, char *argv[])
                 explicit_start_addr = strtoul(optarg, NULL, 0);
                 explicit_start = true;
                 break;
+            case 'g':
+                gdb = true;
+                break;
             case '?':
             default:
                 help = 1;   
@@ -154,7 +160,7 @@ int main(int argc, char *argv[])
         fprintf (stderr,"-b 0xnnnn             = Memory base address (for binary loads)\n");
         fprintf (stderr,"-s nnnn               = Memory size (for binary loads)\n");
         fprintf (stderr,"-X 0xnnnn             = Override start address\n");
-
+        fprintf (stderr,"-g                    = Start GDB server on port 3333\n");
         exit(-1);
     }
 
@@ -192,19 +198,29 @@ int main(int argc, char *argv[])
 
         _cycles = 0;
 
-        uint32_t current_pc = 0;
-        while (!sim->get_fault() && !sim->get_stopped() && current_pc != stop_pc)
+        // GDB server
+        if (gdb)
         {
-            current_pc = sim->get_pc();
-            sim->step();
-            _cycles++;
+            gdb_server *srv = new gdb_server(sim);
+            srv->start(gdb_port);
+        }
+        // Standalone
+        else
+        {
+            uint32_t current_pc = 0;
+            while (!sim->get_fault() && !sim->get_stopped() && current_pc != stop_pc)
+            {
+                current_pc = sim->get_pc();
+                sim->step();
+                _cycles++;
 
-            if (max_cycles != -1 && max_cycles == _cycles)
-                break;
+                if (max_cycles != -1 && max_cycles == _cycles)
+                    break;
 
-            // Turn trace on
-            if (trace_pc == current_pc)
-                sim->enable_trace(trace_mask);
+                // Turn trace on
+                if (trace_pc == current_pc)
+                    sim->enable_trace(trace_mask);
+            }
         }
     }
     else
